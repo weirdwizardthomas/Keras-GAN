@@ -16,10 +16,18 @@ import sys
 
 import numpy as np
 
+import os
+
+p = os.path.abspath('../')
+if p not in sys.path:
+    sys.path.append(p)
+
+from common import load_data
+
 class WGAN():
-    def __init__(self):
-        self.img_rows = 28
-        self.img_cols = 28
+    def __init__(self, width, height):
+        self.img_rows = height
+        self.img_cols = width
         self.channels = 1
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
         self.latent_dim = 100
@@ -61,16 +69,39 @@ class WGAN():
 
         model = Sequential()
 
-        model.add(Dense(128 * 7 * 7, activation="relu", input_dim=self.latent_dim))
-        model.add(Reshape((7, 7, 128)))
+        model.add(Dense(128 * 8 * 8, activation="relu", input_dim=self.latent_dim))
+        model.add(Reshape((8, 8, 128)))
+        
+        # 16x16
         model.add(UpSampling2D())
         model.add(Conv2D(128, kernel_size=4, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(Activation("relu"))
+        
+        # 32x32
         model.add(UpSampling2D())
         model.add(Conv2D(64, kernel_size=4, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(Activation("relu"))
+
+        # 64x64
+        model.add(UpSampling2D())
+        model.add(Conv2D(64, kernel_size=4, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Activation("relu"))
+        
+        # 128x128
+        model.add(UpSampling2D())
+        model.add(Conv2D(64, kernel_size=4, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Activation("relu"))
+        
+        # 256x256
+        model.add(UpSampling2D())
+        model.add(Conv2D(64, kernel_size=4, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Activation("relu"))
+        
         model.add(Conv2D(self.channels, kernel_size=4, padding="same"))
         model.add(Activation("tanh"))
 
@@ -114,7 +145,7 @@ class WGAN():
     def train(self, epochs, batch_size=128, sample_interval=50):
 
         # Load the dataset
-        (X_train, _), (_, _) = mnist.load_data()
+        X_train = load_data()
 
         # Rescale -1 to 1
         X_train = (X_train.astype(np.float32) - 127.5) / 127.5
@@ -187,5 +218,5 @@ class WGAN():
 
 
 if __name__ == '__main__':
-    wgan = WGAN()
+    wgan = WGAN(256,256)
     wgan.train(epochs=4000, batch_size=32, sample_interval=50)
