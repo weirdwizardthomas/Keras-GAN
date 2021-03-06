@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 
-from keras.datasets import mnist
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
@@ -11,13 +10,20 @@ from keras.optimizers import Adam
 import matplotlib.pyplot as plt
 
 import sys
-
 import numpy as np
 
+import os
+
+p = os.path.abspath('../')
+if p not in sys.path:
+    sys.path.append(p)
+
+from common import load_data
+
 class GAN():
-    def __init__(self):
-        self.img_rows = 28
-        self.img_cols = 28
+    def __init__(self, width, height):
+        self.img_rows = height
+        self.img_cols = width
         self.channels = 1
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
         self.latent_dim = 100
@@ -92,7 +98,7 @@ class GAN():
     def train(self, epochs, batch_size=128, sample_interval=50):
 
         # Load the dataset
-        (X_train, _), (_, _) = mnist.load_data()
+        X_train  = load_data()
 
         # Rescale -1 to 1
         X_train = X_train / 127.5 - 1.
@@ -102,8 +108,9 @@ class GAN():
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
 
+        print('Training started')
         for epoch in range(epochs):
-
+          
             # ---------------------
             #  Train Discriminator
             # ---------------------
@@ -158,5 +165,5 @@ class GAN():
 
 
 if __name__ == '__main__':
-    gan = GAN()
-    gan.train(epochs=30000, batch_size=32, sample_interval=200)
+  gan = GAN(256,256)
+  gan.train(epochs=30000, batch_size=32, sample_interval=200)
