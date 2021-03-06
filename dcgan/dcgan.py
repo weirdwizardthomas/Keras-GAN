@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 
-from keras.datasets import mnist
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
@@ -14,11 +13,19 @@ import sys
 
 import numpy as np
 
+import os
+
+p = os.path.abspath('../')
+if p not in sys.path:
+    sys.path.append(p)
+
+from common import load_data
+
 class DCGAN():
-    def __init__(self):
+    def __init__(self,width,height):
         # Input shape
-        self.img_rows = 28
-        self.img_cols = 28
+        self.img_rows = height
+        self.img_cols = width
         self.channels = 1
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
         self.latent_dim = 100
@@ -53,20 +60,43 @@ class DCGAN():
 
         model = Sequential()
 
-        model.add(Dense(128 * 7 * 7, activation="relu", input_dim=self.latent_dim))
-        model.add(Reshape((7, 7, 128)))
+        model.add(Dense(128 * 8 * 8, activation="relu", input_dim=self.latent_dim))
+        model.add(Reshape((8, 8, 128)))
+
+        # 16x16
         model.add(UpSampling2D())
         model.add(Conv2D(128, kernel_size=3, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(Activation("relu"))
+
+        # 32x32
         model.add(UpSampling2D())
         model.add(Conv2D(64, kernel_size=3, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(Activation("relu"))
+        
+        # 64x64
+        model.add(UpSampling2D())
+        model.add(Conv2D(64, kernel_size=3, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Activation("relu"))
+        
+        # 128x128
+        model.add(UpSampling2D())
+        model.add(Conv2D(64, kernel_size=3, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Activation("relu"))
+
+        # 256x256
+        model.add(UpSampling2D())
+        model.add(Conv2D(64, kernel_size=3, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Activation("relu"))
+              
         model.add(Conv2D(self.channels, kernel_size=3, padding="same"))
         model.add(Activation("tanh"))
 
-        model.summary()
+        #model.summary()
 
         noise = Input(shape=(self.latent_dim,))
         img = model(noise)
@@ -96,7 +126,7 @@ class DCGAN():
         model.add(Flatten())
         model.add(Dense(1, activation='sigmoid'))
 
-        model.summary()
+        #model.summary()
 
         img = Input(shape=self.img_shape)
         validity = model(img)
@@ -106,7 +136,7 @@ class DCGAN():
     def train(self, epochs, batch_size=128, save_interval=50):
 
         # Load the dataset
-        (X_train, _), (_, _) = mnist.load_data()
+        X_train = load_data()
 
         # Rescale -1 to 1
         X_train = X_train / 127.5 - 1.
@@ -169,5 +199,5 @@ class DCGAN():
 
 
 if __name__ == '__main__':
-    dcgan = DCGAN()
+    dcgan = DCGAN(256,256)
     dcgan.train(epochs=4000, batch_size=32, save_interval=50)
