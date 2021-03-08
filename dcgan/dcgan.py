@@ -10,8 +10,9 @@ from keras.optimizers import Adam
 import matplotlib.pyplot as plt
 
 import sys
-
 import numpy as np
+
+import argparse
 
 import os
 
@@ -20,42 +21,82 @@ if p not in sys.path:
     sys.path.append(p)
 
 from common import load_data
+from common import GANdalf as dalf
 
-class DCGAN():
-    def __init__(self,width,height):
-        # Input shape
+class DCGAN(dalf):
+    def __init__(self,width,height,load_model=False):
+        super().__init__()
         self.img_rows = height
         self.img_cols = width
         self.channels = 1
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
         self.latent_dim = 100
+        
+        self.model_save_dir = 'saved_model'
 
-        optimizer = Adam(0.0002, 0.5)
+        self.model_loaded = load_model
 
-        # Build and compile the discriminator
-        self.discriminator = self.build_discriminator()
-        self.discriminator.compile(loss='binary_crossentropy',
-            optimizer=optimizer,
-            metrics=['accuracy'])
+        if load_model:
+          self.load_model()
+        else:
+          self.init_model()
 
-        # Build the generator
-        self.generator = self.build_generator()
+    def load_model(self):
+      optimizer = Adam(0.0002, 0.5)
 
-        # The generator takes noise as input and generates imgs
-        z = Input(shape=(self.latent_dim,))
-        img = self.generator(z)
+      # Load and compile the discriminator
+      self.discriminator = self.load_keras_model("discriminator_model")
+      self.discriminator.compile(loss='binary_crossentropy',
+                                optimizer=optimizer,
+                                metrics=['accuracy'])
 
-        # For the combined model we will only train the generator
-        self.discriminator.trainable = False
+      # Load the generator
+      self.generator = self.load_keras_model("generator_model")
 
-        # The discriminator takes generated images as input and determines validity
-        valid = self.discriminator(img)
+      # The generator takes noise as input and generates imgs
+      z = Input(shape=(self.latent_dim,))
+      img = self.generator(z)
 
-        # The combined model  (stacked generator and discriminator)
-        # Trains the generator to fool the discriminator
-        self.combined = Model(z, valid)
-        self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+      # For the combined model we will only train the generator
+      self.discriminator.trainable = False
 
+      # The discriminator takes generated images as input and determines validity
+      validity = self.discriminator(img)
+
+      # The combined model  (stacked generator and discriminator)
+      # Trains the generator to fool the discriminator
+      self.combined = self.load_keras_model("combined_model")
+      self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+
+    def init_model(self):
+      optimizer = Adam(0.0002, 0.5)
+
+      # Build and compile the discriminator
+      self.discriminator = self.build_discriminator()
+      self.discriminator.compile(loss='binary_crossentropy',
+                                optimizer=optimizer,
+                                metrics=['accuracy'])
+
+      # Build the generator
+      self.generator = self.build_generator()
+
+      # The generator takes noise as input and generates imgs
+      z = Input(shape=(self.latent_dim,))
+      img = self.generator(z)
+
+      # For the combined model we will only train the generator
+      self.discriminator.trainable = False
+
+      # The discriminator takes generated images as input and determines validity
+      valid = self.discriminator(img)
+
+      # The combined model (stacked generator and discriminator)
+      # Trains the generator to fool the discriminator
+      self.combined = Model(z, valid)
+      self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+
+      self.write_stats_header()
+       
     def build_generator(self):
 
         model = Sequential()
@@ -110,20 +151,25 @@ class DCGAN():
         model.add(Conv2D(32, kernel_size=3, strides=2, input_shape=self.img_shape, padding="same"))
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.25))
+
         model.add(Conv2D(64, kernel_size=3, strides=2, padding="same"))
         model.add(ZeroPadding2D(padding=((0,1),(0,1))))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.25))
+
         model.add(Conv2D(128, kernel_size=3, strides=2, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.25))
+
         model.add(Conv2D(256, kernel_size=3, strides=1, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.25))
+
         model.add(Flatten())
+
         model.add(Dense(1, activation='sigmoid'))
 
         model.summary()
@@ -133,10 +179,10 @@ class DCGAN():
 
         return Model(img, validity)
 
-    def train(self, epochs, batch_size=128, save_interval=50):
+    def train(self, epochs, batch_size, sample_interval, save_interval, data_path):
 
         # Load the dataset
-        X_train = load_data()
+        X_train  = load_data(data_path)
 
         # Rescale -1 to 1
         X_train = X_train / 127.5 - 1.
@@ -145,8 +191,10 @@ class DCGAN():
         # Adversarial ground truths
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
+        
+        start = self.last_checkpoint if self.model_loaded else 0
 
-        for epoch in range(epochs):
+        for epoch in range(start,epochs):
 
             # ---------------------
             #  Train Discriminator
@@ -171,33 +219,47 @@ class DCGAN():
 
             # Train the generator (wants discriminator to mistake images as real)
             g_loss = self.combined.train_on_batch(noise, valid)
-
+            
+            self.epochs.append({'accuracy':d_loss[1], 
+                                'd_loss':d_loss[0],
+                                'g_loss':g_loss})
+                        
             # Plot the progress
             print ("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100*d_loss[1], g_loss))
 
             # If at save interval => save generated image samples
+            if epoch % sample_interval == 0:
+                self.sample_images(epoch)
+
             if epoch % save_interval == 0:
-                self.save_imgs(epoch)
+                self.last_checkpoint = epoch
+                self.save_models()
+                self.save_statistics()
 
-    def save_imgs(self, epoch):
-        r, c = 5, 5
-        noise = np.random.normal(0, 1, (r * c, self.latent_dim))
-        gen_imgs = self.generator.predict(noise)
+        self.last_checkpoint = epochs
+        self.save_models()
+        self.save_statistics()
 
-        # Rescale images 0 - 1
-        gen_imgs = 0.5 * gen_imgs + 0.5
-
-        fig, axs = plt.subplots(r, c)
-        cnt = 0
-        for i in range(r):
-            for j in range(c):
-                axs[i,j].imshow(gen_imgs[cnt, :,:,0], cmap='gray')
-                axs[i,j].axis('off')
-                cnt += 1
-        fig.savefig("images/mnist_%d.png" % epoch)
-        plt.close()
-
+    def generate_images(self,n,folder):
+        super().generate_images(n,folder,'dcgan')
 
 if __name__ == '__main__':
-    dcgan = DCGAN(256,256)
-    dcgan.train(epochs=4000, batch_size=32, save_interval=50)
+
+    parser = argparse.ArgumentParser(description='GAN')
+    parser.add_argument('--mode', default='train')
+    parser.add_argument('--sample_interval',type=int,default=500)
+    parser.add_argument('--save_interval',type=int,default=500)
+    parser.add_argument('--test_data',type=str,default='')
+    parser.add_argument('--load_model',default=False,action='store_true',dest='load_model')
+    parser.add_argument('--generate_n',type=int,default=100)
+    parser.add_argument('--epochs',type=int,default=10000)
+    args = parser.parse_args()
+    
+    if args.mode == 'train':
+        dcgan = DCGAN(256,256,args.load_model)
+        dcgan.train(epochs=4000, batch_size=32, sample_interval=100, save_interval=500, data_path='/content/drive/MyDrive/data/COVID-Net/positive/train')
+    elif args.mode == 'test':
+        ...
+    elif args.mode == 'generate':
+        dcgan = DCGAN(256,256,load_model=True)
+        dcgan.generate_images(n=args.generate_n, folder='/content/drive/MyDrive/data/COVID-Net/generated')
