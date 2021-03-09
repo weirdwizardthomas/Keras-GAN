@@ -14,16 +14,33 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
-class INFOGAN():
-    def __init__(self):
-        self.img_rows = 28
-        self.img_cols = 28
+import os
+
+p = os.path.abspath('../')
+if p not in sys.path:
+    sys.path.append(p)
+
+from common import load_data
+from common import GANdalf as dalf
+
+class INFOGAN(dalf):
+    def __init__(self,width,height,load_model=False):
+        self.img_rows = height
+        self.img_cols = width
         self.channels = 1
         self.num_classes = 10
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
         self.latent_dim = 72
 
+        self.model_save_dir = 'saved_model'
 
+
+        if load_model:
+            self.load_model()
+        else:
+            self.init_model()
+
+    def init_model(self):
         optimizer = Adam(0.0002, 0.5)
         losses = ['binary_crossentropy', self.mutual_info_loss]
 
@@ -59,6 +76,35 @@ class INFOGAN():
         self.combined = Model(gen_input, [valid, target_label])
         self.combined.compile(loss=losses,
             optimizer=optimizer)
+
+    def load_model(self):
+        optimizer = Adam(0.0002, 0.5)
+        losses = ['binary_crossentropy', self.mutual_info_loss]
+
+        self.discriminator = self.load_keras_model('discriminator_model')
+        self.discriminator.compile(loss=['binary_crossentropy'],
+            optimizer=optimizer,
+            metrics=['accuracy'])
+
+        self.auxilliary = self.load_keras_model('auxiliary_model')
+        self.auxilliary.compile(loss=[self.mutual_info_loss],
+            optimizer=optimizer,
+            metrics=['accuracy'])
+
+        self.generator = self.load_keras_model('generator_model')
+        
+        gen_input = Input(shape=(self.latent_dim,))
+        img = self.generator(gen_input)
+
+        self.discriminator.trainable = False
+        
+        valid = self.discriminator(img)
+        target_label = self.auxilliary(img)
+
+        self.combined = Model(gen_input, [valid, target_label])
+        self.combined.compile(loss=losses,
+            optimizer=optimizer)
+
 
 
     def build_generator(self):

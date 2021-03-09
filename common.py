@@ -114,6 +114,19 @@ def load_data(folder, size=(256,256)):
   print('Converted {counter} images'.format(counter=counter))
   return np.array(images)
 
+def load_labeled_data(folders, size=(256,256)):
+  files = []
+
+  for folder in folders:
+    files +=  glob.glob('{folder}/*'.format(folder=folder)) + glob.glob('{folder}/*'.format(folder=folder))
+
+  for file in files:
+    print(file)
+
+  print('Loading images')
+
+  
+
 def save_image(image_array,filename):
   im = Image.fromarray(image_array)
   im.save(filename)
