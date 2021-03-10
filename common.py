@@ -10,6 +10,8 @@ import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 
+import random
+
 from keras.models import model_from_json
 
 class GANdalf:
@@ -114,16 +116,37 @@ def load_data(folder, size=(256,256)):
   print('Converted {counter} images'.format(counter=counter))
   return np.array(images)
 
-def load_labeled_data(folders, size=(256,256)):
+def load_labeled_data(positive_folder, negative_folder, size=(256,256)):
   files = []
+  labels = []
 
-  for folder in folders:
-    files +=  glob.glob('{folder}/*'.format(folder=folder)) + glob.glob('{folder}/*'.format(folder=folder))
+  positive_files = glob.glob('{folder}/*.*'.format(folder=positive_folder))
+  negative_files = glob.glob('{folder}/*.*'.format(folder=negative_folder))
 
-  for file in files:
-    print(file)
+  dataset_size = min(len(positive_files), len(negative_files))
+
+  positive_files = random.sample(positive_files,dataset_size)
+  negative_files = random.sample(negative_files, dataset_size)
+  
+  files = negative_files + positive_files
+  labels = [0] * dataset_size + [1] * dataset_size
 
   print('Loading images')
+
+  counter = 0 
+  images = []
+  
+  for file in tqdm(files):
+    img = Image.open(file)
+    if img.mode != 'L':
+      img = img.convert(mode='L')
+      counter += 1
+    img = np.array(img.resize(size))
+    images.append(img)
+      
+  print('Converted {counter} images'.format(counter=counter))
+
+  return np.array(images), np.array(labels)
 
   
 

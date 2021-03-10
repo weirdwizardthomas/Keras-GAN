@@ -12,16 +12,38 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
-class CGAN():
-    def __init__(self):
+import argparse
+
+import os
+import sys
+
+p = os.path.abspath('../')
+if p not in sys.path:
+    sys.path.append(p)
+
+from common import load_labeled_data
+from common import GANdalf as dalf
+
+class CGAN(dalf):
+    def __init__(self,width,height,load_model=False):
         # Input shape
-        self.img_rows = 28
-        self.img_cols = 28
+        self.img_rows = height
+        self.img_cols = width
         self.channels = 1
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
-        self.num_classes = 10
+        self.num_classes = 2
         self.latent_dim = 100
 
+        self.model_save_dir = 'saved_model'
+
+        self.model_loaded = load_model
+
+        if load_model:
+            self.load_model()
+        else:
+            self.init_model()
+
+    def init_model(self):
         optimizer = Adam(0.0002, 0.5)
 
         # Build and compile the discriminator
@@ -52,20 +74,45 @@ class CGAN():
         self.combined.compile(loss=['binary_crossentropy'],
             optimizer=optimizer)
 
+    def load_model(self):
+        optimizer = Adam(0.0002, 0.5)
+
+        self.discriminator = self.load_keras_model('discriminator_model')
+        self.discriminator.compile(loss=['binary_crossentropy'],
+            optimizer=optimizer,
+            metrics=['accuracy'])
+
+        self.generator = self.load_keras_model('generator_model')
+        
+        noise = Input(shape=(self.latent_dim,))
+        label = Input(shape=(1,))
+        img = self.generator([noise, label])
+
+        self.discriminator.trainable = False
+        
+        valid = self.discriminator([img, label])
+
+        self.combined = self.load_keras_model('combined_model')
+        self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+
     def build_generator(self):
 
         model = Sequential()
 
         model.add(Dense(256, input_dim=self.latent_dim))
         model.add(LeakyReLU(alpha=0.2))
+
         model.add(BatchNormalization(momentum=0.8))
         model.add(Dense(512))
         model.add(LeakyReLU(alpha=0.2))
+
         model.add(BatchNormalization(momentum=0.8))
         model.add(Dense(1024))
         model.add(LeakyReLU(alpha=0.2))
+
         model.add(BatchNormalization(momentum=0.8))
         model.add(Dense(np.prod(self.img_shape), activation='tanh'))
+        
         model.add(Reshape(self.img_shape))
 
         model.summary()
@@ -85,13 +132,17 @@ class CGAN():
 
         model.add(Dense(512, input_dim=np.prod(self.img_shape)))
         model.add(LeakyReLU(alpha=0.2))
+        
         model.add(Dense(512))
         model.add(LeakyReLU(alpha=0.2))
+        
         model.add(Dropout(0.4))
         model.add(Dense(512))
         model.add(LeakyReLU(alpha=0.2))
+        
         model.add(Dropout(0.4))
         model.add(Dense(1, activation='sigmoid'))
+        
         model.summary()
 
         img = Input(shape=self.img_shape)
@@ -106,10 +157,10 @@ class CGAN():
 
         return Model([img, label], validity)
 
-    def train(self, epochs, batch_size=128, sample_interval=50):
+    def train(self, epochs, batch_size, sample_interval, save_interval, data_a, data_b):
 
         # Load the dataset
-        (X_train, y_train), (_, _) = mnist.load_data()
+        X_train, y_train = load_labeled_data(data_a,data_b,size=(self.img_cols, self.img_rows))
 
         # Configure input
         X_train = (X_train.astype(np.float32) - 127.5) / 127.5
@@ -120,7 +171,9 @@ class CGAN():
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
 
-        for epoch in range(epochs):
+        start=self.last_checkpoint if self.model_loaded else 0
+        
+        for epoch in range(start, epochs):
 
             # ---------------------
             #  Train Discriminator
@@ -158,7 +211,16 @@ class CGAN():
             if epoch % sample_interval == 0:
                 self.sample_images(epoch)
 
-    def sample_images(self, epoch):
+            if epoch* save_interval == 0:
+                self.last_checkpoint = epoch
+                self.save_models()
+                self.save_statistics()
+        
+        self.last_checkpoint = epoch
+        self.save_models()
+        self.save_statistics()
+
+    def sample_images(self, epoch):     
         r, c = 2, 5
         noise = np.random.normal(0, 1, (r * c, 100))
         sampled_labels = np.arange(0, 10).reshape(-1, 1)
@@ -181,5 +243,24 @@ class CGAN():
 
 
 if __name__ == '__main__':
-    cgan = CGAN()
-    cgan.train(epochs=20000, batch_size=32, sample_interval=200)
+
+    parser = argparse.ArgumentParser(description='GAN')
+    parser.add_argument('--mode', default='train')
+    parser.add_argument('--sample_interval',type=int,default=500)
+    parser.add_argument('--save_interval',type=int,default=500)
+    parser.add_argument('--test_data',type=str,default='')
+    parser.add_argument('--load_model',default=False,action='store_true',dest='load_model')
+    parser.add_argument('--generate_n',type=int,default=100)
+    parser.add_argument('--epochs',type=int,default=10000)
+    args = parser.parse_args()
+
+    if args.mode == 'train':
+        cgan = CGAN(256,256,args.load_model)
+        cgan.train(epochs=args.epochs, batch_size=32, 
+                  sample_interval=args.sample_interval, save_interval=args.save_interval,
+                  data_b='/content/drive/MyDrive/data/COVID-Net/positive',
+                  data_a='/content/drive/MyDrive/data/COVID-Net/negative')
+    elif args.mode == 'test':
+        ...
+    elif args.mode == 'generate':
+        ...
